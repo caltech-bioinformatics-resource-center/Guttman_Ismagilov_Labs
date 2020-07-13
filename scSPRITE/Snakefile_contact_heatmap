@@ -1,0 +1,71 @@
+from os.path import join
+configfile: "config.yaml"
+
+get_sprite_contact=config["RUNCONTACT"]
+assembly=config["ASSEMBLY"]
+chromosome=config["CHR"]
+min_cluster_size=config["CLUSTERMIN"]
+max_cluster_size=config["CLUSTERMAX"]
+resolution=config["RESOLUTION"]
+downweighting=config["DOWNWEIGHT"]
+hic=config["RUNHIC"]
+heat=config["HEATMAP"]
+max_scale=config["MAX"]
+celltop=config["CELLTOP"]
+
+for chr in chromosome:
+  print("Chromosome " + chr + " will be processed")
+
+rule all:
+    input:
+        expand("log/SPRITE_{chr}.txt", chr=chromosome)
+
+rule run_contact:
+    input:
+        get_sprite_contact,
+        hic,
+        "cluster/clusters_all"
+    output:
+        "contact_bulk/{chr}.raw_contact",
+        "contact_bulk/{chr}.biases",
+        "contact_bulk/{chr}.ic",
+        "contact_bulk/{chr}.final_contact"
+    params:
+        chr="{chr}"
+    shell:
+        """
+         python {input[0]} --clusters {input[2]} --raw_contacts {output[0]} --biases {output[1]} --iced {output[2]} --output {output[3]} --assembly {assembly} --chromosome {params.chr} --min_cluster_size {min_cluster_size} --max_cluster_size {max_cluster_size} --resolution {resolution} --downweighting {downweighting} --hicorrector {input[1]}
+        """
+
+rule run_heatmap:
+    input:
+        heat,
+        "contact_bulk/{chr}.raw_contact",
+        "contact_bulk/{chr}.biases",
+        "contact_bulk/{chr}.ic",
+        "contact_bulk/{chr}.final_contact"
+    output:
+        "contact_bulk/{chr}_final.png"
+    shell:
+        """
+         Rscript --vanilla {input[0]} {input[4]} {output[0]} {max_scale}
+        """
+
+rule run_contact_heatmap_single:
+    input:
+        "contact_bulk/{chr}_final.png"
+    output:
+        "log/SPRITE_{chr}.txt"
+    params:
+        chr="{chr}"
+    shell:
+        """
+         mkdir -p contact_single
+         cd cluster/single_filtered
+         ls -S DPM* | awk -v topcells="{celltop}" -v contact_exe="{get_sprite_contact}" -v assembly="{assembly}" -v chr="{params.chr}" -v min="{min_cluster_size}" -v max="{max_cluster_size}" -v res="{resolution}" -v dw="{downweighting}" -v hic_exe="{hic}" '{{ if($1~"^DPM" && FNR<=topcells) print "python "contact_exe" --clusters "$1" --raw_contacts ../../contact_single/"$1"-"chr".raw_contact --biases ../../contact_single/"$1"-"chr".biases --iced ../../contact_single/"$1"-"chr".ic --output ../../contact_single/"$1"-"chr".final_contact --assembly "assembly" --chromosome "chr" --min_cluster_size "min" --max_cluster_size "max" --resolution "res" --downweighting "dw" --hicorrector "hic_exe }}' > run_single_contact_{params.chr}
+         ls -S DPM* | awk -v topcells="{celltop}" -v heat_exe="{heat}" -v chr="{params.chr}" -v max_scale="{max_scale}" '{{ if($1~"^DPM" && FNR<=topcells) print "Rscript --vanilla "heat_exe" ../../contact_single/"$1"-"chr".final_contact ../../contact_single/"$1"-"chr".png "max_scale }}' > run_single_heatmap_{params.chr}
+         bash run_single_contact_{params.chr}
+         bash run_single_heatmap_{params.chr}
+         cd ../..
+         echo "SPRITE is complete" > {output}
+        """

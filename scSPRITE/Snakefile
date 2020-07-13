@@ -1,0 +1,244 @@
+from os.path import join
+configfile: "config.yaml"
+#fulgent_dir=config["FASTQ"]
+barcode_id_jar=config["RUNBC"]
+config_bc=config["CONFIGBC"]
+trimr1=config["TRIMR1"]
+star=config["RUNSTAR"]
+star_index=config["STARINDEX"]
+lig_eff=config["RUNLIG"]
+samtools=config["RUNSAM"]
+all_tags=config["ALLTAG"]
+mask=config["MASK"]
+bedtools=config["RUNBED"]
+get_clusters=config["GETCLUSTER"]
+lig_eff=config["RUNLIG"]
+fastqc=config["RUNQC"]
+get_sprite_contact=config["RUNCONTACT"]
+assembly=config["ASSEMBLY"]
+chromosome=config["CHR"]
+min_cluster_size=config["CLUSTERMIN"]
+max_cluster_size=config["CLUSTERMAX"]
+resolution=config["RESOLUTION"]
+downweighting=config["DOWNWEIGHT"]
+hic=config["RUNHIC"]
+heat=config["HEATMAP"]
+max_scale=config["MAX"]
+cellsel=config["CELLSEL"]
+splitbycell=config["SPLITBYCELL"]
+numreadscontacts=config["NUMREADSCONTACTS"]
+normcdf=config["NORMCDF"]
+clusterbreakdown=config["CLUSTERBREAKDOWN"]
+
+import subprocess
+#command = 'mv %s/FT*/FT*/sc*R*gz raw_fastq'%(fulgent_dir)
+#subprocess.call("mkdir -p raw_fastq", shell=True)
+#subprocess.call(command, shell=True)
+subprocess.call('echo "Sample" > raw_fastq/data_ID.txt', shell=True)
+subprocess.call('ls raw_fastq/*_1.fq.gz | xargs -n 1 basename >> raw_fastq/data_ID.txt', shell=True)
+subprocess.call("sed -i 's/_1.fq.gz//g' raw_fastq/data_ID.txt", shell=True)
+
+import pandas as pd
+from pathlib import Path
+df = pd.read_csv('raw_fastq/data_ID.txt', sep='\t', index_col='Sample')
+SAMPLES = df.index
+
+NB_SAMPLES = len(SAMPLES)
+
+for sample in SAMPLES:
+  print("Sample " + sample + " will be processed")
+
+for chr in chromosome:
+  print("Chromosome " + chr + " will be processed")
+
+rule all:
+    input:
+        "ligation/ligation_efficiency.txt",
+        "log/clusters_single_cells.txt"
+
+rule run_fastqc:
+    input:
+        fastqc,
+        "raw_fastq/{sample}_1.fq.gz",
+        "raw_fastq/{sample}_2.fq.gz"
+    output:
+        "log/fastqc_{sample}.txt"
+    shell:
+        """
+         mkdir -p fastqc
+         {input[0]} {input[1]} -o fastqc
+         {input[0]} {input[2]} -o fastqc
+         echo "FASTQC is complete" > {output}
+        """
+
+rule run_barcode:
+    input:
+        barcode_id_jar,
+        config_bc,
+        "raw_fastq/{sample}_1.fq.gz",
+        "raw_fastq/{sample}_2.fq.gz"
+    output:
+        "new_fastq/{sample}_R1.barcoded.fastq.gz",
+        "new_fastq/{sample}_R2.barcoded.fastq.gz"
+    shell:
+        """
+         java -jar {input[0]} --input1 {input[2]} --input2 {input[3]} \
+             --output1 {output[0]} --output2 {output[1]} --config {input[1]}
+        """
+
+rule get_ligation_efficiency:
+    input:
+        "new_fastq/{sample}_R1.barcoded.fastq.gz",
+        lig_eff
+    output:
+        temp("ligation/{sample}.ligation_efficiency.txt")
+    shell:
+        """
+         /bin/python {input[1]} {input[0]} > {output}
+        """ 
+
+rule cat_ligation_efficiency:
+    input:
+        expand("ligation/{sample}.ligation_efficiency.txt", sample=SAMPLES)
+    output:
+        "ligation/ligation_efficiency.txt"
+    shell:
+        """
+         cat ligation/*.ligation_efficiency.txt > {output}
+        """
+
+rule trim_r1_reads:
+    input:
+        "new_fastq/{sample}_R1.barcoded.fastq.gz"
+    output:
+        "new_fastq/{sample}_R1.trimmed.fastq.gz"
+    shell:
+        """
+         zcat {input} | awk -v len={trimr1} '{{if(NR%2==0) print substr($0,1,len); else print $0;}}' | gzip > {output}
+        """
+
+rule align_to_genome:
+    input:
+        "new_fastq/{sample}_R1.trimmed.fastq.gz",
+        star,
+        star_index
+    output:
+        "log/star_{sample}.txt",
+        "alignment/{sample}Aligned.sortedByCoord.out.bam"
+    params:
+        sample="{sample}"
+    shell:
+        """
+         mkdir -p alignment
+         cd alignment
+         {input[1]} --outFilterMultimapNmax 50 --outFilterScoreMinOverLread 0.30 --outFilterMatchNminOverLread 0.30 --outFilterIntronMotifs None --alignIntronMax 50000 --alignMatesGapMax 1000 --genomeLoad NoSharedMemory --outReadsUnmapped Fastx --alignIntronMin 80 --alignSJDBoverhangMin 5 --sjdbOverhang 100 --genomeDir {input[2]} --readFilesIn ../{input[0]} --readFilesCommand zcat --outFileNamePrefix {params.sample} --outSAMtype BAM SortedByCoordinate --outSAMattributes All --limitOutSJcollapsed 10000000 --limitIObufferSize=300000000
+         cd ..
+         echo "STAR alignment is complete" > {output}
+        """
+
+rule unique_mappers:
+    input:
+        "log/star_{sample}.txt",
+        "alignment/{sample}Aligned.sortedByCoord.out.bam",
+        samtools
+    output:
+        "alignment/{sample}Aligned.sortedByCoord.out.unique.bam"
+    shell:
+        """
+         {input[2]} view -b -q 255 -o {output} {input[1]} 
+        """
+
+rule all_barcodes:
+    input:
+        "alignment/{sample}Aligned.sortedByCoord.out.unique.bam",
+        all_tags
+    output:
+        "alignment/{sample}Aligned.sortedByCoord.out.unique.all_bcs.bam"
+    shell:
+        """
+         /bin/python {input[1]} -i {input[0]} -o {output}
+        """
+
+rule repeat_mask:
+    input:
+        "alignment/{sample}Aligned.sortedByCoord.out.unique.all_bcs.bam",
+        mask,
+        bedtools,
+        "log/fastqc_{sample}.txt"
+    output:
+        "alignment/{sample}Aligned.sortedByCoord.out.unique.all_bcs.masked.bam"
+    shell:
+        """
+         {input[2]} intersect -v -a {input[0]} -b {input[1]} > {output}
+        """
+
+rule merge_bam:
+    input:
+        expand("alignment/{sample}Aligned.sortedByCoord.out.unique.all_bcs.masked.bam", sample=SAMPLES)
+    output:
+        "alignment/all.bam"
+    shell:
+        """
+         samtools merge {output} alignment/*all_bcs.masked.bam
+        """
+
+rule make_clusters:
+    input:
+        "alignment/all.bam",
+        get_clusters
+    output:
+        "cluster/clusters_all"
+    log:
+        "cluster/make_clusters.log"
+    shell:
+        """
+         /bin/python {input[1]} -i {input[0]} -o {output} -n 6 &> {log}
+        """
+
+rule reformat_clusters:
+    input:
+        "cluster/clusters_all"
+    output:
+        "cluster/clusters_all_reform"
+    log:
+        "cluster/reformat_clusters.log"
+    shell:
+        """
+         awk '{{print $1}}' {input} > cluster/temp1.txt
+         awk '{{$1=""; print}}' {input} > cluster/temp2.txt
+         sed -i 's/ /\t/g' cluster/temp2.txt
+         awk -F"." '{{print $6"."$1"."$2"."$3"."$4"."$5}}' cluster/temp1.txt > cluster/temp3.txt
+         paste cluster/temp3.txt cluster/temp2.txt > {output}
+         sed -i 's/\t\t/\t/g' {output}
+         rm cluster/temp1.txt
+         rm cluster/temp2.txt
+         rm cluster/temp3.txt
+        """
+
+rule cluster_single_cells:
+    input:
+        "cluster/clusters_all_reform"
+    output:
+        "log/clusters_single_cells.txt"
+    shell:
+        """
+         cd cluster
+         mkdir -p single
+         mkdir -p single_filtered
+         cd single
+         python ../../{splitbycell} ../clusters_all_reform
+         ls -S | awk -v cellselect="{cellsel}" '{{ if($1~"^DPM" && FNR<=cellselect) print "mv "$1" ../single_filtered/" }}' > run_filter_single
+         bash run_filter_single
+         cd ..
+         rm -r single
+         cd single_filtered
+         python ../../{numreadscontacts}
+         sort -r -n -k3 one_last_time.txt | awk '{{if($1!~"Cell") print}}'> one_last_time_sort_reads.txt
+         sort -r -n -k2 one_last_time.txt | awk '{{if($1!~"Cell") print}}'> one_last_time_sort_clusters.txt
+         python ../../{normcdf}
+         cd ..
+         python ../{clusterbreakdown}
+         cd ..
+         echo "single cluster step is complete" > {output}
+        """
+
