@@ -17,6 +17,7 @@
 * Relocate to local scSPRITE directory:
 * `cd scSPRITE`
 * Transfer raw paired-end fastq files (xxx1.fq.gz, xxx2.fq.gz) to raw_fastq directory:
+* `cp ~/data/*1.fq.gz raw_fastq/` `cp ~/data/*2.fq.gz raw_fastq/`
 * Try a snakemake dry run: 
 * `snakemake -n`
 * If no error message, perform first step snakemake run with multi cores (e.g., 4 cores): 
