@@ -1,0 +1,63 @@
+##########################
+#### use python2.7 
+#### pip install pysam
+#fastq directory downloaded
+#FASTQ: /home/fgao/scSPRITE/Example/20190412_M1A230_scSPRITE
+#barcode id
+RUNBC: misc/sprite-pipeline/java/BarcodeIdentification_v1.2.0.jar
+#barcode configuration file
+CONFIGBC: misc/config_dpm6_y-stag_scSPRITE2.txt
+#R1 fastq trimmed length
+TRIMR1: 100
+#run STAR
+RUNSTAR: /home/software/bin/STAR  #Please specifiy your local STAR directory
+#star index
+STARINDEX: /home/fgao/reference_genome/Mus_musculus/UCSC/mm9/STARIndex_100    #Please specify your local STAR index directory
+#ligation efficiency
+RUNLIG: misc/sprite-pipeline/python/get_ligation_efficiency.py
+#run samtools
+RUNSAM: /home/fgao/software/samtools-1.9/samtools    #Please specify your local samtools directory
+#filter_all_tags
+ALLTAG: misc/sprite-pipeline/python/filter_all_tags.py
+#mask regions
+MASK: misc/sprite-pipeline/mm9.gatk35-and-rmsk140.bed
+#run bedtools
+RUNBED: /home/fgao/software/bedtools2/bin/bedtools   #Please specify your local bedtools2 directory
+#get clusters
+GETCLUSTER: misc/sprite-pipeline/python/get_clusters.py
+#get ligation efficiency
+RUNLIG: misc/sprite-pipeline/python/get_ligation_efficiency.py
+#run fastqc
+RUNQC: /home/fgao/software/FastQC/fastqc    #Please specify your local fastqc directory
+#run sprite_contatc
+RUNCONTACT: misc/sprite-pipeline/python/get_sprite_contacts.py
+#get genome assembly information
+ASSEMBLY: mm9
+#get chromosome information (chrN for intra-chromosomal interaction, genome for inter-chromosomal interaction) to generate contact map
+CHR: ["chr1","chr2","chr3","chr4","chr5","chr6","chr7","chr8","chr9","chr10","chr11","chr12","chr13","chr14","chr15","chr16","chr17","chr18","chr19","chrX"]
+#get minimal cluster size for calculating contact map
+CLUSTERMIN: 2
+#get maximal cluster size for calculating contact map
+CLUSTERMAX: 1000
+#The binning resolution for contact map
+RESOLUTION: 1000000
+#downweigting option for contact
+DOWNWEIGHT: none
+#hicorrector ic excutable path
+RUNHIC: /home/fgao/software/Hi-Corrector1.2/bin/ic   #Please specify your local Hi-Corrector directory
+#plot contact heatmap
+HEATMAP: misc/sprite-pipeline/r/heatmap_gen.r
+#max value for the color-scale of the heatmaps
+MAX: 1
+#estimated number of single-cells
+CELLSEL: 4000
+#split by celll script
+SPLITBYCELL: misc/split_by_cell.py
+#numreads numcontacts script
+NUMREADSCONTACTS: misc/numreads_numcontacts.py
+#normalized cdf single-cell reads clusters
+NORMCDF: misc/normalized_cdf_sc_reads_clusters.py
+#cluster breakdown
+CLUSTERBREAKDOWN: misc/cluster_breakdown.py
+#estimiated number of top single-cells for contact and heatmap
+CELLTOP: 20
